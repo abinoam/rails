@@ -18,6 +18,11 @@ class Array
   #   ["3", "4"]
   #   ["5"]
   def in_groups_of(number, fill_with = nil)
+    if number.to_i <= 0
+      raise ArgumentError,
+        "Group size must be a positive integer, was #{number.inspect}"
+    end
+
     if fill_with == false
       collection = self
     else
@@ -84,28 +89,19 @@ class Array
   #   [1, 2, 3, 4, 5].split(3)              # => [[1, 2], [4, 5]]
   #   (1..10).to_a.split { |i| i % 3 == 0 } # => [[1, 2], [4, 5], [7, 8], [10]]
   def split(value = nil)
+    arr = dup
+    result = []
     if block_given?
-      inject([[]]) do |results, element|
-        if yield(element)
-          results << []
-        else
-          results.last << element
-        end
-
-        results
+      while (idx = arr.index { |i| yield i })
+        result << arr.shift(idx)
+        arr.shift
       end
     else
-      results, arr = [[]], self.dup
-      until arr.empty?
-        if (idx = arr.index(value))
-          results.last.concat(arr.shift(idx))
-          arr.shift
-          results << []
-        else
-          results.last.concat(arr.shift(arr.size))
-        end
+      while (idx = arr.index(value))
+        result << arr.shift(idx)
+        arr.shift
       end
-      results
     end
+    result << arr
   end
 end

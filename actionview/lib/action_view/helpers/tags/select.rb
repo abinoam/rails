@@ -3,7 +3,7 @@ module ActionView
     module Tags # :nodoc:
       class Select < Base # :nodoc:
         def initialize(object_name, method_name, template_object, choices, options, html_options)
-          @choices = block_given? ? template_object.capture { yield } : choices
+          @choices = block_given? ? template_object.capture { yield || "" } : choices
           @choices = @choices.to_a if @choices.is_a?(Range)
 
           @html_options = html_options
@@ -13,8 +13,8 @@ module ActionView
 
         def render
           option_tags_options = {
-            :selected => @options.fetch(:selected) { value(@object) },
-            :disabled => @options[:disabled]
+            selected: @options.fetch(:selected) { value(@object) },
+            disabled: @options[:disabled]
           }
 
           option_tags = if grouped_choices?
@@ -28,13 +28,13 @@ module ActionView
 
         private
 
-        # Grouped choices look like this:
-        #
-        #   [nil, []]
-        #   { nil => [] }
-        def grouped_choices?
-          !@choices.empty? && @choices.first.respond_to?(:last) && Array === @choices.first.last
-        end
+          # Grouped choices look like this:
+          #
+          #   [nil, []]
+          #   { nil => [] }
+          def grouped_choices?
+            !@choices.blank? && @choices.first.respond_to?(:last) && Array === @choices.first.last
+          end
       end
     end
   end

@@ -6,6 +6,7 @@
 #
 default: &default
   adapter: sqlite3
+  pool: <%%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
 
 development:
   <<: *default
@@ -18,7 +19,6 @@ test:
   <<: *default
   database: db/test.sqlite3
 
-# Do not keep production credentials in the repository,
-# instead read the configuration from the environment.
 production:
-  url: <%%= ENV["DATABASE_URL"] %>
+  <<: *default
+  database: db/production.sqlite3

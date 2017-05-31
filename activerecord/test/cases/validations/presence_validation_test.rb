@@ -1,10 +1,9 @@
-# encoding: utf-8
 require "cases/helper"
-require 'models/man'
-require 'models/face'
-require 'models/interest'
-require 'models/speedometer'
-require 'models/dashboard'
+require "models/man"
+require "models/face"
+require "models/interest"
+require "models/speedometer"
+require "models/dashboard"
 
 class PresenceValidationTest < ActiveRecord::TestCase
   class Boy < Man; end
@@ -52,16 +51,53 @@ class PresenceValidationTest < ActiveRecord::TestCase
   end
 
   def test_validates_presence_doesnt_convert_to_array
-    Speedometer.validates_presence_of :dashboard
+    speedometer = Class.new(Speedometer)
+    speedometer.validates_presence_of :dashboard
 
     dash = Dashboard.new
 
     # dashboard has to_a method
-    def dash.to_a; ['(/)', '(\)']; end
+    def dash.to_a; ["(/)", '(\)']; end
 
-    s = Speedometer.new
+    s = speedometer.new
     s.dashboard = dash
 
     assert_nothing_raised { s.valid? }
+  end
+
+  def test_validates_presence_of_virtual_attribute_on_model
+    repair_validations(Interest) do
+      Interest.send(:attr_accessor, :abbreviation)
+      Interest.validates_presence_of(:topic)
+      Interest.validates_presence_of(:abbreviation)
+
+      interest = Interest.create!(topic: "Thought Leadering", abbreviation: "tl")
+      assert interest.valid?
+
+      interest.abbreviation = ""
+
+      assert interest.invalid?
+    end
+  end
+
+  def test_validations_run_on_persisted_record
+    repair_validations(Interest) do
+      interest = Interest.new
+      interest.save!
+      assert_predicate interest, :valid?
+
+      Interest.validates_presence_of(:topic)
+
+      assert_not_predicate interest, :valid?
+    end
+  end
+
+  def test_validates_presence_with_on_context
+    repair_validations(Interest) do
+      Interest.validates_presence_of(:topic, on: :required_name)
+      interest = Interest.new
+      interest.save!
+      assert_not interest.valid?(:required_name)
+    end
   end
 end

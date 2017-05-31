@@ -1,3 +1,5 @@
+**DO NOT READ THIS FILE ON GITHUB, GUIDES ARE PUBLISHED ON http://guides.rubyonrails.org.**
+
 Ruby on Rails 4.1 Release Notes
 ===============================
 
@@ -8,10 +10,10 @@ Highlights in Rails 4.1:
 * Action Pack variants
 * Action Mailer previews
 
-These release notes cover only the major changes. To know about various bug
-fixes and changes, please refer to the change logs or check out the
-[list of commits](https://github.com/rails/rails/commits/master) in the main
-Rails repository on GitHub.
+These release notes cover only the major changes. To learn about various bug
+fixes and changes, please refer to the change logs or check out the [list of
+commits](https://github.com/rails/rails/commits/4-1-stable) in the main Rails
+repository on GitHub.
 
 --------------------------------------------------------------------------------
 
@@ -136,7 +138,7 @@ end
 
 ### Action Mailer Previews
 
-Action Mailer previews provide a way to visually see how emails look by visiting
+Action Mailer previews provide a way to see how emails look by visiting
 a special URL that renders them.
 
 You implement a preview class whose methods return the mail object you'd like
@@ -157,7 +159,7 @@ By default, these preview classes live in `test/mailers/previews`.
 This can be configured using the `preview_path` option.
 
 See its
-[documentation](http://api.rubyonrails.org/v4.1.0/classes/ActionMailer/Base.html)
+[documentation](http://api.rubyonrails.org/v4.1.0/classes/ActionMailer/Base.html#class-ActionMailer::Base-label-Previewing+emails)
 for a detailed write up.
 
 ### Active Record enums
@@ -291,6 +293,10 @@ for detailed changes.
   with `config.active_record.maintain_test_schema = false`. ([Pull
   Request](https://github.com/rails/rails/pull/13528))
 
+* Introduce `Rails.gem_version` as a convenience method to return
+  `Gem::Version.new(Rails.version)`, suggesting a more reliable way to perform
+  version comparison. ([Pull Request](https://github.com/rails/rails/pull/14103))
+
 
 Action Pack
 -----------
@@ -311,15 +317,15 @@ for detailed changes.
 
 * Removed deprecated constants from Action Controller:
 
-  | Removed                            | Successor                       |
-  |:-----------------------------------|:--------------------------------|
-  | ActionController::AbstractRequest  | ActionDispatch::Request         |
-  | ActionController::Request          | ActionDispatch::Request         |
-  | ActionController::AbstractResponse | ActionDispatch::Response        |
-  | ActionController::Response         | ActionDispatch::Response        |
-  | ActionController::Routing          | ActionDispatch::Routing         |
-  | ActionController::Integration      | ActionDispatch::Integration     |
-  | ActionController::IntegrationTest  | ActionDispatch::IntegrationTest |
+| Removed                            | Successor                       |
+|:-----------------------------------|:--------------------------------|
+| ActionController::AbstractRequest  | ActionDispatch::Request         |
+| ActionController::Request          | ActionDispatch::Request         |
+| ActionController::AbstractResponse | ActionDispatch::Response        |
+| ActionController::Response         | ActionDispatch::Response        |
+| ActionController::Routing          | ActionDispatch::Routing         |
+| ActionController::Integration      | ActionDispatch::Integration     |
+| ActionController::IntegrationTest  | ActionDispatch::IntegrationTest |
 
 ### Notable changes
 
@@ -346,10 +352,14 @@ for detailed changes.
   params "deep munging" that was used to address security vulnerability
   CVE-2013-0155. ([Pull Request](https://github.com/rails/rails/pull/13188))
 
-* New config option `config.action_dispatch.cookies_serializer` for specifying
-  a serializer for the signed and encrypted cookie jars. (Pull Requests [1](https://github.com/rails/rails/pull/13692), [2](https://github.com/rails/rails/pull/13945) / [More Details](upgrading_ruby_on_rails.html#cookies-serializer))
+* New config option `config.action_dispatch.cookies_serializer` for specifying a
+  serializer for the signed and encrypted cookie jars. (Pull Requests
+  [1](https://github.com/rails/rails/pull/13692),
+  [2](https://github.com/rails/rails/pull/13945) /
+  [More Details](upgrading_ruby_on_rails.html#cookies-serializer))
 
-* Added `render :plain`, `render :html` and `render :body`. ([Pull Request](https://github.com/rails/rails/pull/14062) /
+* Added `render :plain`, `render :html` and `render
+  :body`. ([Pull Request](https://github.com/rails/rails/pull/14062) /
   [More Details](upgrading_ruby_on_rails.html#rendering-content-from-string))
 
 
@@ -703,9 +713,9 @@ for detailed changes.
 * Default the new `I18n.enforce_available_locales` config to `true`, meaning
   `I18n` will make sure that all locales passed to it must be declared in the
   `available_locales`
-  list. ([Pull Request](https://github.com/rails/rails/commit/8e21ae37ad9fef6b7393a84f9b5f2e18a831e49a))
+  list. ([Pull Request](https://github.com/rails/rails/pull/13341))
 
-* Introduce Module#concerning: a natural, low-ceremony way to separate
+* Introduce `Module#concerning`: a natural, low-ceremony way to separate
   responsibilities within a
   class. ([Commit](https://github.com/rails/rails/commit/1eee0ca6de975b42524105a59e0521d18b38ab81))
 

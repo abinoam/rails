@@ -1,152 +1,126 @@
-require 'thread_safe'
-require 'action_view/dependency_tracker'
-require 'monitor'
+require "concurrent/map"
+require "action_view/dependency_tracker"
+require "monitor"
 
 module ActionView
   class Digestor
-    cattr_reader(:cache)
-    @@cache          = ThreadSafe::Cache.new
-    @@digest_monitor = Monitor.new
+    @@digest_mutex = Mutex.new
+
+    module PerExecutionDigestCacheExpiry
+      def self.before(target)
+        ActionView::LookupContext::DetailsKey.clear
+      end
+    end
 
     class << self
       # Supported options:
       #
       # * <tt>name</tt>   - Template name
-      # * <tt>format</tt>  - Template format
-      # * <tt>variant</tt>  - Variant of +format+ (optional)
-      # * <tt>finder</tt>  - An instance of ActionView::LookupContext
+      # * <tt>finder</tt>  - An instance of <tt>ActionView::LookupContext</tt>
       # * <tt>dependencies</tt>  - An array of dependent views
-      # * <tt>partial</tt>  - Specifies whether the template is a partial
-      def digest(options_or_deprecated_name, *deprecated_args)
-        options = _options_for_digest(options_or_deprecated_name, *deprecated_args)
-
-        details_key = options[:finder].details_key.hash
-        dependencies = Array.wrap(options[:dependencies])
-        cache_key = ([options[:name], details_key, options[:format], options[:variant]].compact + dependencies).join('.')
+      def digest(name:, finder:, dependencies: [])
+        dependencies ||= []
+        cache_key = [ name, finder.rendered_format, dependencies ].flatten.compact.join(".")
 
         # this is a correctly done double-checked locking idiom
-        # (ThreadSafe::Cache's lookups have volatile semantics)
-        @@cache[cache_key] || @@digest_monitor.synchronize do
-          @@cache.fetch(cache_key) do # re-check under lock
-            compute_and_store_digest(cache_key, options)
+        # (Concurrent::Map's lookups have volatile semantics)
+        finder.digest_cache[cache_key] || @@digest_mutex.synchronize do
+          finder.digest_cache.fetch(cache_key) do # re-check under lock
+            partial = name.include?("/_")
+            root = tree(name, finder, partial)
+            dependencies.each do |injected_dep|
+              root.children << Injected.new(injected_dep, nil, nil)
+            end
+            finder.digest_cache[cache_key] = root.digest(finder)
           end
         end
       end
-
-      def _options_for_digest(options_or_deprecated_name, *deprecated_args)
-        if !options_or_deprecated_name.is_a?(Hash)
-          ActiveSupport::Deprecation.warn \
-            'ActionView::Digestor.digest changed its method signature from ' \
-            '#digest(name, format, finder, options) to #digest(options), ' \
-            'with options now including :name, :format, :finder, and ' \
-            ':variant. Please update your code to pass a Hash argument. ' \
-            'Support for the old method signature will be removed in Rails 5.0.'
-
-          _options_for_digest (deprecated_args[2] || {}).merge \
-            name:   options_or_deprecated_name,
-            format: deprecated_args[0],
-            finder: deprecated_args[1]
-        else
-          options_or_deprecated_name.assert_valid_keys(:name, :format, :variant, :finder, :dependencies, :partial)
-          options_or_deprecated_name
-        end
-      end
-
-      private
-
-      def compute_and_store_digest(cache_key, options) # called under @@digest_monitor lock
-        klass = if options[:partial] || options[:name].include?("/_")
-          # Prevent re-entry or else recursive templates will blow the stack.
-          # There is no need to worry about other threads seeing the +false+ value,
-          # as they will then have to wait for this thread to let go of the @@digest_monitor lock.
-          pre_stored = @@cache.put_if_absent(cache_key, false).nil? # put_if_absent returns nil on insertion
-          PartialDigestor
-        else
-          Digestor
-        end
-
-        digest = klass.new(options).digest
-        # Store the actual digest if config.cache_template_loading is true
-        @@cache[cache_key] = stored_digest = digest if ActionView::Resolver.caching?
-        digest
-      ensure
-        # something went wrong or ActionView::Resolver.caching? is false, make sure not to corrupt the @@cache
-        @@cache.delete_pair(cache_key, false) if pre_stored && !stored_digest
-      end
-    end
-
-    attr_reader :name, :format, :variant, :finder, :options
-
-    def initialize(options_or_deprecated_name, *deprecated_args)
-      options = self.class._options_for_digest(options_or_deprecated_name, *deprecated_args)
-      @options = options.except(:name, :format, :variant, :finder)
-      @name, @format, @variant, @finder = options.values_at(:name, :format, :variant, :finder)
-    end
-
-    def digest
-      Digest::MD5.hexdigest("#{source}-#{dependency_digest}").tap do |digest|
-        logger.try :info, "Cache digest for #{name}.#{format}: #{digest}"
-      end
-    rescue ActionView::MissingTemplate
-      logger.try :error, "Couldn't find template for digesting: #{name}.#{format}"
-      ''
-    end
-
-    def dependencies
-      DependencyTracker.find_dependencies(name, template)
-    rescue ActionView::MissingTemplate
-      [] # File doesn't exist, so no dependencies
-    end
-
-    def nested_dependencies
-      dependencies.collect do |dependency|
-        dependencies = PartialDigestor.new(name: dependency, format: format, finder: finder).nested_dependencies
-        dependencies.any? ? { dependency => dependencies } : dependency
-      end
-    end
-
-    private
 
       def logger
-        ActionView::Base.logger
+        ActionView::Base.logger || NullLogger
       end
 
-      def logical_name
-        name.gsub(%r|/_|, "/")
-      end
+      # Create a dependency tree for template named +name+.
+      def tree(name, finder, partial = false, seen = {})
+        logical_name = name.gsub(%r|/_|, "/")
 
-      def partial?
-        false
-      end
+        options = {}
+        options[:formats] = [finder.rendered_format] if finder.rendered_format
 
-      def template
-        @template ||= begin
-          finder.disable_cache do
-            finder.find(logical_name, [], partial?, [], formats: [format], variants: [variant])
+        if template = finder.disable_cache { finder.find_all(logical_name, [], partial, [], options).first }
+          finder.rendered_format ||= template.formats.first
+
+          if node = seen[template.identifier] # handle cycles in the tree
+            node
+          else
+            node = seen[template.identifier] = Node.create(name, logical_name, template, partial)
+
+            deps = DependencyTracker.find_dependencies(name, template, finder.view_paths)
+            deps.uniq { |n| n.gsub(%r|/_|, "/") }.each do |dep_file|
+              node.children << tree(dep_file, finder, true, seen)
+            end
+            node
           end
+        else
+          unless name.include?("#") # Dynamic template partial names can never be tracked
+            logger.error "  Couldn't find template for digesting: #{name}"
+          end
+
+          seen[name] ||= Missing.new(name, logical_name, nil)
         end
       end
+    end
 
-      def source
-        template.source
+    class Node
+      attr_reader :name, :logical_name, :template, :children
+
+      def self.create(name, logical_name, template, partial)
+        klass = partial ? Partial : Node
+        klass.new(name, logical_name, template, [])
       end
 
-      def dependency_digest
-        template_digests = dependencies.collect do |template_name|
-          Digestor.digest(name: template_name, format: format, finder: finder, partial: true)
-        end
-
-        (template_digests + injected_dependencies).join("-")
+      def initialize(name, logical_name, template, children = [])
+        @name         = name
+        @logical_name = logical_name
+        @template     = template
+        @children     = children
       end
 
-      def injected_dependencies
-        Array.wrap(options[:dependencies])
+      def digest(finder, stack = [])
+        Digest::MD5.hexdigest("#{template.source}-#{dependency_digest(finder, stack)}")
       end
-  end
 
-  class PartialDigestor < Digestor # :nodoc:
-    def partial?
-      true
+      def dependency_digest(finder, stack)
+        children.map do |node|
+          if stack.include?(node)
+            false
+          else
+            finder.digest_cache[node.name] ||= begin
+                                                 stack.push node
+                                                 node.digest(finder, stack).tap { stack.pop }
+                                               end
+          end
+        end.join("-")
+      end
+
+      def to_dep_map
+        children.any? ? { name => children.map(&:to_dep_map) } : name
+      end
+    end
+
+    class Partial < Node; end
+
+    class Missing < Node
+      def digest(finder, _ = []) "" end
+    end
+
+    class Injected < Node
+      def digest(finder, _ = []) name end
+    end
+
+    class NullLogger
+      def self.debug(_); end
+      def self.error(_); end
     end
   end
 end

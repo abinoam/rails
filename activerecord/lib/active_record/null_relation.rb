@@ -1,20 +1,14 @@
-# -*- coding: utf-8 -*-
-
 module ActiveRecord
   module NullRelation # :nodoc:
-    def exec_queries
-      @records = []
-    end
-
     def pluck(*column_names)
       []
     end
 
-    def delete_all(_conditions = nil)
+    def delete_all
       0
     end
 
-    def update_all(_updates, _conditions = nil, _options = {})
+    def update_all(_updates)
       0
     end
 
@@ -22,15 +16,19 @@ module ActiveRecord
       0
     end
 
-    def size
-      0
-    end
-
     def empty?
       true
     end
 
+    def none?
+      true
+    end
+
     def any?
+      false
+    end
+
+    def one?
       false
     end
 
@@ -42,26 +40,27 @@ module ActiveRecord
       ""
     end
 
-    def count(*)
-      0
-    end
-
-    def sum(*)
-      0
-    end
-
-    def calculate(operation, _column_name, _options = {})
-      # TODO: Remove _options argument as soon we remove support to
-      # activerecord-deprecated_finders.
-      if operation == :count
-        0
-      else
-        nil
+    def calculate(operation, _column_name)
+      case operation
+      when :count, :sum
+        group_values.any? ? Hash.new : 0
+      when :average, :minimum, :maximum
+        group_values.any? ? Hash.new : nil
       end
     end
 
-    def exists?(_id = false)
+    def exists?(_conditions = :none)
       false
     end
+
+    def or(other)
+      other.spawn
+    end
+
+    private
+
+      def exec_queries
+        @records = [].freeze
+      end
   end
 end

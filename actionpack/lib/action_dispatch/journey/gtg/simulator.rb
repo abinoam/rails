@@ -1,4 +1,4 @@
-require 'strscan'
+require "strscan"
 
 module ActionDispatch
   module Journey # :nodoc:
@@ -18,7 +18,7 @@ module ActionDispatch
           @tt = transition_table
         end
 
-        def simulate(string)
+        def memos(string)
           input = StringScanner.new(string)
           state = [0]
           while sym = input.scan(%r([/.?]|[^/.?]+))
@@ -29,15 +29,10 @@ module ActionDispatch
             tt.accepting? s
           }
 
-          return if acceptance_states.empty?
+          return yield if acceptance_states.empty?
 
-          memos = acceptance_states.flat_map { |x| tt.memo(x) }.compact
-
-          MatchData.new(memos)
+          acceptance_states.flat_map { |x| tt.memo(x) }.compact
         end
-
-        alias :=~    :simulate
-        alias :match :simulate
       end
     end
   end

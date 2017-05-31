@@ -12,14 +12,17 @@ module ActiveRecord
 
       def validate_each(record, attribute, value)
         finder_class = find_finder_class_for(record)
-        table = finder_class.arel_table
         value = map_enum_attribute(finder_class, attribute, value)
-        value = deserialize_attribute(record, attribute, value)
 
-        relation = build_relation(finder_class, table, attribute, value)
-        relation = relation.and(table[finder_class.primary_key.to_sym].not_eq(record.id)) if record.persisted?
-        relation = scope_relation(record, table, relation)
-        relation = finder_class.unscoped.where(relation)
+        relation = build_relation(finder_class, attribute, value)
+        if record.persisted?
+          if finder_class.primary_key
+            relation = relation.where.not(finder_class.primary_key => record.id_in_database || record.id)
+          else
+            raise UnknownPrimaryKey.new(finder_class, "Can not validate uniqueness for persisted record without primary key.")
+          end
+        end
+        relation = scope_relation(record, relation)
         relation = relation.merge(options[:conditions]) if options[:conditions]
 
         if relation.exists?
@@ -30,13 +33,13 @@ module ActiveRecord
         end
       end
 
-    protected
+    private
       # The check for an existing value should be run from a class that
       # isn't abstract. This means working down from the current class
       # (self), to the first non-abstract class. Since classes don't know
       # their subclasses, we have to build the hierarchy between self and
       # the record's class.
-      def find_finder_class_for(record) #:nodoc:
+      def find_finder_class_for(record)
         class_hierarchy = [record.class]
 
         while class_hierarchy.first != @klass
@@ -46,54 +49,25 @@ module ActiveRecord
         class_hierarchy.detect { |klass| !klass.abstract_class? }
       end
 
-      def build_relation(klass, table, attribute, value) #:nodoc:
-        if reflection = klass.reflect_on_association(attribute)
-          attribute = reflection.foreign_key
-          value = value.attributes[reflection.primary_key_column.name] unless value.nil?
-        end
-
-        attribute_name = attribute.to_s
-
-        # the attribute may be an aliased attribute
-        if klass.attribute_aliases[attribute_name]
-          attribute = klass.attribute_aliases[attribute_name]
-          attribute_name = attribute.to_s
-        end
-
-        column = klass.columns_hash[attribute_name]
-        value  = klass.connection.type_cast(value, column)
-        value  = value.to_s[0, column.limit] if value && column.limit && column.text?
-
-        if !options[:case_sensitive] && value && column.text?
-          # will use SQL LOWER function before comparison, unless it detects a case insensitive collation
-          klass.connection.case_insensitive_comparison(table, attribute, column, value)
-        else
-          klass.connection.case_sensitive_comparison(table, attribute, column, value)
-        end
+      def build_relation(klass, attribute, value)
+        klass.unscoped.where!({ attribute => value }, options)
       end
 
-      def scope_relation(record, table, relation)
+      def scope_relation(record, relation)
         Array(options[:scope]).each do |scope_item|
-          if reflection = record.class.reflect_on_association(scope_item)
-            scope_value = record.send(reflection.foreign_key)
-            scope_item  = reflection.foreign_key
+          scope_value = if record.class._reflect_on_association(scope_item)
+            record.association(scope_item).reader
           else
-            scope_value = record.read_attribute(scope_item)
+            record._read_attribute(scope_item)
           end
-          relation = relation.and(table[scope_item].eq(scope_value))
+          relation = relation.where(scope_item => scope_value)
         end
 
         relation
       end
 
-      def deserialize_attribute(record, attribute, value)
-        coder = record.class.serialized_attributes[attribute.to_s]
-        value = coder.dump value if value && coder
-        value
-      end
-
       def map_enum_attribute(klass, attribute, value)
-        mapping = klass.enum_mapping_for(attribute.to_s)
+        mapping = klass.defined_enums[attribute.to_s]
         value = mapping[value] if value && mapping
         value
       end
@@ -157,14 +131,15 @@ module ActiveRecord
       #   or <tt>if: Proc.new { |user| user.signup_step > 2 }</tt>). The method,
       #   proc or string should return or evaluate to a +true+ or +false+ value.
       # * <tt>:unless</tt> - Specifies a method, proc or string to call to
-      #   determine if the validation should ot occur (e.g. <tt>unless: :skip_validation</tt>,
+      #   determine if the validation should not occur (e.g. <tt>unless: :skip_validation</tt>,
       #   or <tt>unless: Proc.new { |user| user.signup_step <= 2 }</tt>). The
       #   method, proc or string should return or evaluate to a +true+ or +false+
       #   value.
       #
       # === Concurrency and integrity
       #
-      # Using this validation method in conjunction with ActiveRecord::Base#save
+      # Using this validation method in conjunction with
+      # {ActiveRecord::Base#save}[rdoc-ref:Persistence#save]
       # does not guarantee the absence of duplicate record insertions, because
       # uniqueness checks on the application level are inherently prone to race
       # conditions. For example, suppose that two users try to post a Comment at
@@ -201,12 +176,12 @@ module ActiveRecord
       # This could even happen if you use transactions with the 'serializable'
       # isolation level. The best way to work around this problem is to add a unique
       # index to the database table using
-      # ActiveRecord::ConnectionAdapters::SchemaStatements#add_index. In the
-      # rare case that a race condition occurs, the database will guarantee
+      # {connection.add_index}[rdoc-ref:ConnectionAdapters::SchemaStatements#add_index].
+      # In the rare case that a race condition occurs, the database will guarantee
       # the field's uniqueness.
       #
       # When the database catches such a duplicate insertion,
-      # ActiveRecord::Base#save will raise an ActiveRecord::StatementInvalid
+      # {ActiveRecord::Base#save}[rdoc-ref:Persistence#save] will raise an ActiveRecord::StatementInvalid
       # exception. You can either choose to let this error propagate (which
       # will result in the default Rails exception page being shown), or you
       # can catch it and restart the transaction (e.g. by telling the user
@@ -222,7 +197,6 @@ module ActiveRecord
       #
       # The following bundled adapters throw the ActiveRecord::RecordNotUnique exception:
       #
-      # * ActiveRecord::ConnectionAdapters::MysqlAdapter.
       # * ActiveRecord::ConnectionAdapters::Mysql2Adapter.
       # * ActiveRecord::ConnectionAdapters::SQLite3Adapter.
       # * ActiveRecord::ConnectionAdapters::PostgreSQLAdapter.

@@ -5,7 +5,7 @@ module Rails
   end
 
   module VERSION
-    MAJOR = 4
+    MAJOR = 5
     MINOR = 2
     TINY  = 0
     PRE   = "alpha"

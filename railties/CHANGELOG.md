@@ -1,35 +1,17 @@
-*   Removed unnecessary `rails application` command.
+*   Allow irb options to be passed from `rails console` command.
 
-    *Arun Agrawal*
+    Fixes #28988.
 
-*   Make the `rails:template` rake task load the application's initializers.
+    *Yuji Yaginuma*
 
-    Fixes #12133.
+*   Added a shared section to config/database.yml that will be loaded for all environments.
 
-    *Robin Dupret*
+    *Pierre Schambacher*
 
-*   Introduce `Rails.gem_version` as a convenience method to return
-    `Gem::Version.new(Rails.version)`, suggesting a more reliable way to perform
-    version comparison.
+*   Namespace error pages' CSS selectors to stop the styles from bleeding into other pages
+    when using Turbolinks.
 
-    Example:
+    *Jan Krutisch*
 
-        Rails.version #=> "4.1.2"
-        Rails.gem_version #=> #<Gem::Version "4.1.2">
 
-        Rails.version > "4.1.10" #=> false
-        Rails.gem_version > Gem::Version.new("4.1.10") #=> true
-        Gem::Requirement.new("~> 4.1.2") =~ Rails.gem_version #=> true
-
-    *Prem Sichanugrist*
-
-*   Avoid namespacing routes inside engines.
-
-    Mountable engines are namespaced by default so the generated routes
-    were too while they should not.
-
-    Fixes #14079.
-
-    *Yves Senn*, *Carlos Antonio da Silva*, *Robin Dupret*
-
-Please check [4-1-stable](https://github.com/rails/rails/blob/4-1-stable/railties/CHANGELOG.md) for previous changes.
+Please check [5-1-stable](https://github.com/rails/rails/blob/5-1-stable/railties/CHANGELOG.md) for previous changes.

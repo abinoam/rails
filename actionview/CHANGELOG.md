@@ -1,21 +1,11 @@
-*   Add `include_hidden` option to `collection_check_boxes` helper.
+*   Add `:json` type to `auto_discovery_link_tag` to support [JSON Feeds](https://jsonfeed.org/version/1)
 
-    *Vasiliy Ermolovich*
+    *Mike Gunderloy*
 
-*   Fixed a problem where the default options for the `button_tag` helper is not
-    applied correctly.
+*   Update `distance_of_time_in_words` helper to display better error messages
+    for bad input.
 
-    Fixes #14254.
-
-    *Sergey Prikhodko*
-
-*   Take variants into account when calculating template digests in ActionView::Digestor.
-
-    The arguments to ActionView::Digestor#digest are now being passed as a hash
-    to support variants and allow more flexibility in the future. The support for
-    regular (required) arguments is deprecated and will be removed in Rails 5.0 or later.
-
-    *Piotr Chmolowski, Łukasz Strzałkowski*
+    *Jay Hayes*
 
 
-Please check [4-1-stable](https://github.com/rails/rails/blob/4-1-stable/actionview/CHANGELOG.md) for previous changes.
+Please check [5-1-stable](https://github.com/rails/rails/blob/5-1-stable/actionview/CHANGELOG.md) for previous changes.

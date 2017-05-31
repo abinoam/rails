@@ -1,100 +1,64 @@
-*   Add support for `Relation` be passed as parameter on `QueryCache#select_all`.
-
-    Fixes #14361.
-
-    *arthurnn*
-
-* Passing an Active Record object to `find` is now deprecated.  Call `.id`
-  on the object first.
-
-* Passing an Active Record object to `exists?` is now deprecated.  Call `.id`
-  on the object first.
-
-*   Only use BINARY for mysql case sensitive uniqueness check when column has a case insensitive collation.
+*   Deprecate passing arguments and block at the same time to `count` and `sum` in `ActiveRecord::Calculations`.
 
     *Ryuta Kamizono*
 
-*   Support for Mysql 5.6 Fractional Seconds.
+*   Loading model schema from database is now thread-safe.
 
-    *arthurnn*, *Tatsuhiko Miyagawa*
+    Fixes #28589.
 
-*   Support for Postgres `citext` data type enabling case-insensitive where
-    values without needing to wrap in UPPER/LOWER sql functions.
+    *Vikrant Chaudhary*, *David Abdemoulaie*
 
-    *Troy Kruthoff*, *Lachlan Sylvester*
+*   Add `ActiveRecord::Base#cache_version` to support recyclable cache keys via the new versioned entries
+    in `ActiveSupport::Cache`. This also means that `ActiveRecord::Base#cache_key` will now return a stable key
+    that does not include a timestamp any more.
 
-*   Only save has_one associations if record has changes.
-    Previously after save related callbacks, such as `#after_commit`, were triggered when the has_one
-    object did not get saved to the db.
+    NOTE: This feature is turned off by default, and `#cache_key` will still return cache keys with timestamps
+    until you set `ActiveRecord::Base.cache_versioning = true`. That's the setting for all new apps on Rails 5.2+
 
-    *Alan Kennedy*
+    *DHH*
 
-*   Allow strings to specify the `#order` value.
+*   Respect `SchemaDumper.ignore_tables` in rake tasks for databases structure dump
 
-    Example:
+    *Rusty Geldmacher*, *Guillermo Iguaran*
 
-        Model.order(id: 'asc').to_sql == Model.order(id: :asc).to_sql
+*   Add type caster to `RuntimeReflection#alias_name`
 
-    *Marcelo Casiraghi*, *Robin Dupret*
+    Fixes #28959.
 
-*   Dynamically register PostgreSQL enum OIDs. This prevents "unknown OID"
-    warnings on enum columns.
+    *Jon Moss*
 
-    *Dieter Komendera*
+*   Deprecate `supports_statement_cache?`.
 
-*   `includes` is able to detect the right preloading strategy when string
-    joins are involved.
+    *Ryuta Kamizono*
 
-    Fixes #14109.
+*   Quote database name in `db:create` grant statement (when database user does not have access to create the database).
 
-    *Aaron Patterson*, *Yves Senn*
+    *Rune Philosof*
 
-*   Fixed error with validation with enum fields for records where the
-    value for any enum attribute is always evaluated as 0 during
-    uniqueness validation.
+*   Raise error `UnknownMigrationVersionError` on the movement of migrations
+    when the current migration does not exist.
 
-    Fixes #14172.
+    *bogdanvlviv*
 
-    *Vilius Luneckas* *Ahmed AbouElhamayed*
+*   Fix `bin/rails db:forward` first migration.
 
-*   `before_add` callbacks are fired before the record is saved on
-    `has_and_belongs_to_many` assocations *and* on `has_many :through`
-    associations.  Before this change, `before_add` callbacks would be fired
-    before the record was saved on `has_and_belongs_to_many` associations, but
-    *not* on `has_many :through` associations.
+    *bogdanvlviv*
 
-    Fixes #14144.
+*   Support Descending Indexes for MySQL.
 
-*   Fixed STI classes not defining an attribute method if there is a
-    conflicting private method defined on its ancestors.
+    MySQL 8.0.1 and higher supports descending indexes: `DESC` in an index definition is no longer ignored.
+    See https://dev.mysql.com/doc/refman/8.0/en/descending-indexes.html.
 
-    Fixes #11569.
+    *Ryuta Kamizono*
 
-    *Godfrey Chan*
+*   Fix inconsistency with changed attributes when overriding AR attribute reader.
 
-*   Coerce strings when reading attributes. Fixes #10485.
+    *bogdanvlviv*
 
-    Example:
+*   When calling the dynamic fixture accessor method with no arguments it now returns all fixtures of this type.
+    Previously this method always returned an empty array.
 
-        book = Book.new(title: 12345)
-        book.save!
-        book.title # => "12345"
+    *Kevin McPhillips*
 
-    *Yves Senn*
 
-*   Deprecate half-baked support for PostgreSQL range values with excluding beginnings.
-    We currently map PostgreSQL ranges to Ruby ranges. This conversion is not fully
-    possible because the Ruby range does not support excluded beginnings.
-
-    The current solution of incrementing the beginning is not correct and is now
-    deprecated. For subtypes where we don't know how to increment (e.g. `#succ`
-    is not defined) it will raise an ArgumentException for ranges with excluding
-    beginnings.
-
-    *Yves Senn*
-
-*   Support for user created range types in PostgreSQL.
-
-    *Yves Senn*
-
-Please check [4-1-stable](https://github.com/rails/rails/blob/4-1-stable/activerecord/CHANGELOG.md) for previous changes.
+Please check [5-1-stable](https://github.com/rails/rails/blob/5-1-stable/activerecord/CHANGELOG.md) for previous changes.

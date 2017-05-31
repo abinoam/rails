@@ -1,154 +1,168 @@
 module ActiveRecord
   module Associations
     class AssociationScope #:nodoc:
-      INSTANCE = new
-
       def self.scope(association, connection)
-        INSTANCE.scope association, connection
+        INSTANCE.scope(association, connection)
       end
 
-      def scope(association, connection)
-        klass         = association.klass
-        reflection    = association.reflection
-        scope         = klass.unscoped
-        owner         = association.owner
-        alias_tracker = AliasTracker.empty connection
+      def self.create(&block)
+        block ||= lambda { |val| val }
+        new(block)
+      end
 
-        scope.extending! Array(reflection.options[:extend])
-        add_constraints(scope, owner, klass, reflection, alias_tracker)
+      def initialize(value_transformation)
+        @value_transformation = value_transformation
+      end
+
+      INSTANCE = create
+
+      def scope(association, connection)
+        klass = association.klass
+        reflection = association.reflection
+        scope = klass.unscoped
+        owner = association.owner
+        alias_tracker = AliasTracker.create connection, association.klass.table_name, klass.type_caster
+        chain_head, chain_tail = get_chain(reflection, association, alias_tracker)
+
+        scope.extending! reflection.extensions
+        add_constraints(scope, owner, reflection, chain_head, chain_tail)
       end
 
       def join_type
         Arel::Nodes::InnerJoin
       end
 
+      def self.get_bind_values(owner, chain)
+        binds = []
+        last_reflection = chain.last
+
+        binds << last_reflection.join_id_for(owner)
+        if last_reflection.type
+          binds << owner.class.base_class.name
+        end
+
+        chain.each_cons(2).each do |reflection, next_reflection|
+          if reflection.type
+            binds << next_reflection.klass.base_class.name
+          end
+        end
+        binds
+      end
+
+      # TODO Change this to private once we've dropped Ruby 2.2 support.
+      # Workaround for Ruby 2.2 "private attribute?" warning.
+      protected
+
+        attr_reader :value_transformation
+
       private
-
-      def construct_tables(chain, klass, refl, alias_tracker)
-        chain.map do |reflection|
-          alias_tracker.aliased_table_for(
-            table_name_for(reflection, klass, refl),
-            table_alias_for(reflection, refl, reflection != refl)
-          )
-        end
-      end
-
-      def table_alias_for(reflection, refl, join = false)
-        name = "#{reflection.plural_name}_#{alias_suffix(refl)}"
-        name << "_join" if join
-        name
-      end
-
-      def join(table, constraint)
-        table.create_join(table, table.create_on(constraint), join_type)
-      end
-
-      def column_for(table_name, column_name, alias_tracker)
-        columns = alias_tracker.connection.schema_cache.columns_hash(table_name)
-        columns[column_name]
-      end
-
-      def bind_value(scope, column, value, alias_tracker)
-        substitute = alias_tracker.connection.substitute_at(
-          column, scope.bind_values.length)
-        scope.bind_values += [[column, value]]
-        substitute
-      end
-
-      def bind(scope, table_name, column_name, value, tracker)
-        column   = column_for table_name, column_name, tracker
-        bind_value scope, column, value, tracker
-      end
-
-      def add_constraints(scope, owner, assoc_klass, refl, tracker)
-        chain = refl.chain
-        scope_chain = refl.scope_chain
-
-        tables = construct_tables(chain, assoc_klass, refl, tracker)
-
-        chain.each_with_index do |reflection, i|
-          table, foreign_table = tables.shift, tables.first
-
-          if reflection.source_macro == :belongs_to
-            if reflection.options[:polymorphic]
-              key = reflection.association_primary_key(assoc_klass)
-            else
-              key = reflection.association_primary_key
-            end
-
-            foreign_key = reflection.foreign_key
-          else
-            key         = reflection.foreign_key
-            foreign_key = reflection.active_record_primary_key
-          end
-
-          if reflection == chain.last
-            bind_val = bind scope, table.table_name, key.to_s, owner[foreign_key], tracker
-            scope    = scope.where(table[key].eq(bind_val))
-
-            if reflection.type
-              value    = owner.class.base_class.name
-              bind_val = bind scope, table.table_name, reflection.type.to_s, value, tracker
-              scope    = scope.where(table[reflection.type].eq(bind_val))
-            end
-          else
-            constraint = table[key].eq(foreign_table[foreign_key])
-
-            if reflection.type
-              value    = chain[i + 1].klass.base_class.name
-              bind_val = bind scope, table.table_name, reflection.type.to_s, value, tracker
-              scope    = scope.where(table[reflection.type].eq(bind_val))
-            end
-
-            scope = scope.joins(join(foreign_table, constraint))
-          end
-
-          is_first_chain = i == 0
-          klass = is_first_chain ? assoc_klass : reflection.klass
-
-          # Exclude the scope of the association itself, because that
-          # was already merged in the #scope method.
-          scope_chain[i].each do |scope_chain_item|
-            item  = eval_scope(klass, scope_chain_item, owner)
-
-            if scope_chain_item == refl.scope
-              scope.merge! item.except(:where, :includes, :bind)
-            end
-
-            if is_first_chain
-              scope.includes! item.includes_values
-            end
-
-            scope.where_values += item.where_values
-            scope.order_values |= item.order_values
-          end
+        def join(table, constraint)
+          table.create_join(table, table.create_on(constraint), join_type)
         end
 
-        scope
-      end
+        def last_chain_scope(scope, table, reflection, owner)
+          join_keys = reflection.join_keys
+          key = join_keys.key
+          foreign_key = join_keys.foreign_key
 
-      def alias_suffix(refl)
-        refl.name
-      end
+          value = transform_value(owner[foreign_key])
+          scope = scope.where(table.name => { key => value })
 
-      def table_name_for(reflection, klass, refl)
-        if reflection == refl
-          # If this is a polymorphic belongs_to, we want to get the klass from the
-          # association because it depends on the polymorphic_type attribute of
-          # the owner
-          klass.table_name
-        else
-          reflection.table_name
-        end
-      end
+          if reflection.type
+            polymorphic_type = transform_value(owner.class.base_class.name)
+            scope = scope.where(table.name => { reflection.type => polymorphic_type })
+          end
 
-      def eval_scope(klass, scope, owner)
-        if scope.is_a?(Relation)
           scope
-        else
-          klass.unscoped.instance_exec(owner, &scope)
         end
-      end
+
+        def transform_value(value)
+          value_transformation.call(value)
+        end
+
+        def next_chain_scope(scope, table, reflection, foreign_table, next_reflection)
+          join_keys = reflection.join_keys
+          key = join_keys.key
+          foreign_key = join_keys.foreign_key
+
+          constraint = table[key].eq(foreign_table[foreign_key])
+
+          if reflection.type
+            value = transform_value(next_reflection.klass.base_class.name)
+            scope = scope.where(table.name => { reflection.type => value })
+          end
+
+          scope = scope.joins(join(foreign_table, constraint))
+        end
+
+        class ReflectionProxy < SimpleDelegator # :nodoc:
+          attr_accessor :next
+          attr_reader :alias_name
+
+          def initialize(reflection, alias_name)
+            super(reflection)
+            @alias_name = alias_name
+          end
+
+          def all_includes; nil; end
+        end
+
+        def get_chain(reflection, association, tracker)
+          name = reflection.name
+          runtime_reflection = Reflection::RuntimeReflection.new(reflection, association)
+          previous_reflection = runtime_reflection
+          reflection.chain.drop(1).each do |refl|
+            alias_name = tracker.aliased_table_for(refl.table_name, refl.alias_candidate(name))
+            proxy = ReflectionProxy.new(refl, alias_name)
+            previous_reflection.next = proxy
+            previous_reflection = proxy
+          end
+          [runtime_reflection, previous_reflection]
+        end
+
+        def add_constraints(scope, owner, refl, chain_head, chain_tail)
+          owner_reflection = chain_tail
+          table = owner_reflection.alias_name
+          scope = last_chain_scope(scope, table, owner_reflection, owner)
+
+          reflection = chain_head
+          while reflection
+            table = reflection.alias_name
+            next_reflection = reflection.next
+
+            unless reflection == chain_tail
+              foreign_table = next_reflection.alias_name
+              scope = next_chain_scope(scope, table, reflection, foreign_table, next_reflection)
+            end
+
+            # Exclude the scope of the association itself, because that
+            # was already merged in the #scope method.
+            reflection.constraints.each do |scope_chain_item|
+              item = eval_scope(reflection.klass, table, scope_chain_item, owner)
+
+              if scope_chain_item == refl.scope
+                scope.merge! item.except(:where, :includes)
+              end
+
+              reflection.all_includes do
+                scope.includes! item.includes_values
+              end
+
+              scope.unscope!(*item.unscope_values)
+              scope.where_clause += item.where_clause
+              scope.order_values |= item.order_values
+            end
+
+            reflection = next_reflection
+          end
+
+          scope
+        end
+
+        def eval_scope(klass, table, scope, owner)
+          predicate_builder = PredicateBuilder.new(TableMetadata.new(klass, table))
+          ActiveRecord::Relation.create(klass, table, predicate_builder).instance_exec(owner, &scope)
+        end
     end
   end
 end

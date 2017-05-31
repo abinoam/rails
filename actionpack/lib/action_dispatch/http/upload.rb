@@ -18,21 +18,33 @@ module ActionDispatch
       # A +Tempfile+ object with the actual uploaded file. Note that some of
       # its interface is available directly.
       attr_accessor :tempfile
+      alias :to_io :tempfile
 
       # A string with the headers of the multipart request.
       attr_accessor :headers
 
       def initialize(hash) # :nodoc:
-        @tempfile          = hash[:tempfile]
-        raise(ArgumentError, ':tempfile is required') unless @tempfile
+        @tempfile = hash[:tempfile]
+        raise(ArgumentError, ":tempfile is required") unless @tempfile
 
-        @original_filename = encode_filename(hash[:filename])
+        if hash[:filename]
+          @original_filename = hash[:filename].dup
+
+          begin
+            @original_filename.encode!(Encoding::UTF_8)
+          rescue EncodingError
+            @original_filename.force_encoding(Encoding::UTF_8)
+          end
+        else
+          @original_filename = nil
+        end
+
         @content_type      = hash[:type]
         @headers           = hash[:head]
       end
 
       # Shortcut for +tempfile.read+.
-      def read(length=nil, buffer=nil)
+      def read(length = nil, buffer = nil)
         @tempfile.read(length, buffer)
       end
 
@@ -42,7 +54,7 @@ module ActionDispatch
       end
 
       # Shortcut for +tempfile.close+.
-      def close(unlink_now=false)
+      def close(unlink_now = false)
         @tempfile.close(unlink_now)
       end
 
@@ -64,13 +76,6 @@ module ActionDispatch
       # Shortcut for +tempfile.eof?+.
       def eof?
         @tempfile.eof?
-      end
-
-      private
-
-      def encode_filename(filename)
-        # Encode the filename in the utf8 encoding, unless it is nil
-        filename.force_encoding(Encoding::UTF_8).encode! if filename
       end
     end
   end

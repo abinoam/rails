@@ -1,10 +1,10 @@
 module ActiveRecord
   # = Active Record Autosave Association
   #
-  # +AutosaveAssociation+ is a module that takes care of automatically saving
+  # AutosaveAssociation is a module that takes care of automatically saving
   # associated records when their parent is saved. In addition to saving, it
   # also destroys any associated records that were marked for destruction.
-  # (See +mark_for_destruction+ and <tt>marked_for_destruction?</tt>).
+  # (See #mark_for_destruction and #marked_for_destruction?).
   #
   # Saving of the parent, its associations, and the destruction of marked
   # associations, all happen inside a transaction. This should never leave the
@@ -22,7 +22,7 @@ module ActiveRecord
   #
   # == Validation
   #
-  # Children records are validated unless <tt>:validate</tt> is +false+.
+  # Child records are validated unless <tt>:validate</tt> is +false+.
   #
   # == Callbacks
   #
@@ -35,7 +35,7 @@ module ActiveRecord
   #
   # === One-to-one Example
   #
-  #   class Post
+  #   class Post < ActiveRecord::Base
   #     has_one :author, autosave: true
   #   end
   #
@@ -76,7 +76,7 @@ module ActiveRecord
   #
   # When <tt>:autosave</tt> is not declared new children are saved when their parent is saved:
   #
-  #   class Post
+  #   class Post < ActiveRecord::Base
   #     has_many :comments # :autosave option is not declared
   #   end
   #
@@ -95,20 +95,23 @@ module ActiveRecord
   # When <tt>:autosave</tt> is true all children are saved, no matter whether they
   # are new records or not:
   #
-  #   class Post
+  #   class Post < ActiveRecord::Base
   #     has_many :comments, autosave: true
   #   end
   #
   #   post = Post.create(title: 'ruby rocks')
   #   post.comments.create(body: 'hello world')
   #   post.comments[0].body = 'hi everyone'
-  #   post.save # => saves both post and comment, with 'hi everyone' as body
+  #   post.comments.build(body: "good morning.")
+  #   post.title += "!"
+  #   post.save # => saves both post and comments.
   #
   # Destroying one of the associated models as part of the parent's save action
   # is as simple as marking it for destruction:
   #
-  #   post.comments.last.mark_for_destruction
-  #   post.comments.last.marked_for_destruction? # => true
+  #   post.comments # => [#<Comment id: 1, ...>, #<Comment id: 2, ...]>
+  #   post.comments[1].mark_for_destruction
+  #   post.comments[1].marked_for_destruction? # => true
   #   post.comments.length # => 2
   #
   # Note that the model is _not_ yet removed from the database:
@@ -122,7 +125,6 @@ module ActiveRecord
   # Now it _is_ removed from the database:
   #
   #   Comment.find_by(id: id).nil? # => true
-
   module AutosaveAssociation
     extend ActiveSupport::Concern
 
@@ -138,21 +140,24 @@ module ActiveRecord
 
     included do
       Associations::Builder::Association.extensions << AssociationBuilderExtension
+      mattr_accessor :index_nested_attribute_errors, instance_writer: false
+      self.index_nested_attribute_errors = false
     end
 
-    module ClassMethods
+    module ClassMethods # :nodoc:
       private
 
         def define_non_cyclic_method(name, &block)
+          return if method_defined?(name)
           define_method(name) do |*args|
             result = true; @_already_called ||= {}
             # Loop prevention for validation of associations
             unless @_already_called[name]
               begin
-                @_already_called[name]=true
+                @_already_called[name] = true
                 result = instance_eval(&block)
               ensure
-                @_already_called[name]=false
+                @_already_called[name] = false
               end
             end
 
@@ -173,39 +178,47 @@ module ActiveRecord
         # before actually defining them.
         def add_autosave_association_callbacks(reflection)
           save_method = :"autosave_associated_records_for_#{reflection.name}"
-          validation_method = :"validate_associated_records_for_#{reflection.name}"
-          collection = reflection.collection?
 
-          unless method_defined?(save_method)
-            if collection
-              before_save :before_save_collection_association
+          if reflection.collection?
+            before_save :before_save_collection_association
+            after_save :after_save_collection_association
 
-              define_non_cyclic_method(save_method) { save_collection_association(reflection) }
-              # Doesn't use after_save as that would save associations added in after_create/after_update twice
-              after_create save_method
-              after_update save_method
-            elsif reflection.macro == :has_one
-              define_method(save_method) { save_has_one_association(reflection) }
-              # Configures two callbacks instead of a single after_save so that
-              # the model may rely on their execution order relative to its
-              # own callbacks.
-              #
-              # For example, given that after_creates run before after_saves, if
-              # we configured instead an after_save there would be no way to fire
-              # a custom after_create callback after the child association gets
-              # created.
-              after_create save_method
-              after_update save_method
-            else
-              define_non_cyclic_method(save_method) { save_belongs_to_association(reflection) }
-              before_save save_method
-            end
+            define_non_cyclic_method(save_method) { save_collection_association(reflection) }
+            # Doesn't use after_save as that would save associations added in after_create/after_update twice
+            after_create save_method
+            after_update save_method
+          elsif reflection.has_one?
+            define_method(save_method) { save_has_one_association(reflection) } unless method_defined?(save_method)
+            # Configures two callbacks instead of a single after_save so that
+            # the model may rely on their execution order relative to its
+            # own callbacks.
+            #
+            # For example, given that after_creates run before after_saves, if
+            # we configured instead an after_save there would be no way to fire
+            # a custom after_create callback after the child association gets
+            # created.
+            after_create save_method
+            after_update save_method
+          else
+            define_non_cyclic_method(save_method) { throw(:abort) if save_belongs_to_association(reflection) == false }
+            before_save save_method
           end
 
+          define_autosave_validation_callbacks(reflection)
+        end
+
+        def define_autosave_validation_callbacks(reflection)
+          validation_method = :"validate_associated_records_for_#{reflection.name}"
           if reflection.validate? && !method_defined?(validation_method)
-            method = (collection ? :validate_collection_association : :validate_single_association)
+            if reflection.collection?
+              method = :validate_collection_association
+            else
+              method = :validate_single_association
+            end
+
             define_non_cyclic_method(validation_method) { send(method, reflection) }
             validate validation_method
+            after_validation :_ensure_no_duplicate_errors
           end
         end
     end
@@ -217,7 +230,7 @@ module ActiveRecord
       super
     end
 
-    # Marks this record to be destroyed as part of the parents save transaction.
+    # Marks this record to be destroyed as part of the parent's save transaction.
     # This does _not_ actually destroy the record instantly, rather child record will be destroyed
     # when <tt>parent.save</tt> is called.
     #
@@ -226,7 +239,7 @@ module ActiveRecord
       @marked_for_destruction = true
     end
 
-    # Returns whether or not this record will be destroyed as part of the parents save transaction.
+    # Returns whether or not this record will be destroyed as part of the parent's save transaction.
     #
     # Only useful if the <tt>:autosave</tt> option on the parent is enabled for this associated model.
     def marked_for_destruction?
@@ -249,7 +262,7 @@ module ActiveRecord
     # Returns whether or not this record has been changed in any way (including whether
     # any of its nested autosave associations are likewise changed)
     def changed_for_autosave?
-      new_record? || changed? || marked_for_destruction? || nested_records_changed_for_autosave?
+      new_record? || has_changes_to_save? || marked_for_destruction? || nested_records_changed_for_autosave?
     end
 
     private
@@ -261,18 +274,27 @@ module ActiveRecord
         if new_record
           association && association.target
         elsif autosave
-          association.target.find_all { |record| record.changed_for_autosave? }
+          association.target.find_all(&:changed_for_autosave?)
         else
-          association.target.find_all { |record| record.new_record? }
+          association.target.find_all(&:new_record?)
         end
       end
 
       # go through nested autosave associations that are loaded in memory (without loading
       # any new ones), and return true if is changed for autosave
       def nested_records_changed_for_autosave?
-        self.class.reflect_on_all_autosave_associations.any? do |reflection|
-          association = association_instance_get(reflection.name)
-          association && Array.wrap(association.target).any? { |a| a.changed_for_autosave? }
+        @_nested_records_changed_for_autosave_already_called ||= false
+        return false if @_nested_records_changed_for_autosave_already_called
+        begin
+          @_nested_records_changed_for_autosave_already_called = true
+          self.class._reflections.values.any? do |reflection|
+            if reflection.options[:autosave]
+              association = association_instance_get(reflection.name)
+              association && Array.wrap(association.target).any?(&:changed_for_autosave?)
+            end
+          end
+        ensure
+          @_nested_records_changed_for_autosave_already_called = false
         end
       end
 
@@ -290,7 +312,7 @@ module ActiveRecord
       def validate_collection_association(reflection)
         if association = association_instance_get(reflection.name)
           if records = associated_records_to_validate_or_save(association, new_record?, reflection.options[:autosave])
-            records.each { |record| association_valid?(reflection, record) }
+            records.each_with_index { |record, index| association_valid?(reflection, record, index) }
           end
         end
       end
@@ -298,15 +320,29 @@ module ActiveRecord
       # Returns whether or not the association is valid and applies any errors to
       # the parent, <tt>self</tt>, if it wasn't. Skips any <tt>:autosave</tt>
       # enabled records if they're marked_for_destruction? or destroyed.
-      def association_valid?(reflection, record)
-        return true if record.destroyed? || record.marked_for_destruction?
+      def association_valid?(reflection, record, index = nil)
+        return true if record.destroyed? || (reflection.options[:autosave] && record.marked_for_destruction?)
 
-        unless valid = record.valid?
+        context = validation_context unless [:create, :update].include?(validation_context)
+
+        unless valid = record.valid?(context)
           if reflection.options[:autosave]
+            indexed_attribute = !index.nil? && (reflection.options[:index_errors] || ActiveRecord::Base.index_nested_attribute_errors)
+
             record.errors.each do |attribute, message|
-              attribute = "#{reflection.name}.#{attribute}"
+              attribute = normalize_reflection_attribute(indexed_attribute, reflection, index, attribute)
               errors[attribute] << message
               errors[attribute].uniq!
+            end
+
+            record.errors.details.each_key do |attribute|
+              reflection_attribute =
+                normalize_reflection_attribute(indexed_attribute, reflection, index, attribute).to_sym
+
+              record.errors.details[attribute].each do |error|
+                errors.details[reflection_attribute] << error
+                errors.details[reflection_attribute].uniq!
+              end
             end
           else
             errors.add(reflection.name)
@@ -315,18 +351,29 @@ module ActiveRecord
         valid
       end
 
+      def normalize_reflection_attribute(indexed_attribute, reflection, index, attribute)
+        if indexed_attribute
+          "#{reflection.name}[#{index}].#{attribute}"
+        else
+          "#{reflection.name}.#{attribute}"
+        end
+      end
+
       # Is used as a before_save callback to check while saving a collection
       # association whether or not the parent was a new record before saving.
       def before_save_collection_association
         @new_record_before_save = new_record?
-        true
+      end
+
+      def after_save_collection_association
+        @new_record_before_save = false
       end
 
       # Saves any new associated records, or all loaded autosave associations if
       # <tt>:autosave</tt> is enabled on the association.
       #
       # In addition, it destroys all children that were marked for destruction
-      # with mark_for_destruction.
+      # with #mark_for_destruction.
       #
       # This all happens inside a transaction, _if_ the Transactions module is included into
       # ActiveRecord::Base after the AutosaveAssociation module, which it does by default.
@@ -334,8 +381,10 @@ module ActiveRecord
         if association = association_instance_get(reflection.name)
           autosave = reflection.options[:autosave]
 
-          if records = associated_records_to_validate_or_save(association, @new_record_before_save, autosave)
+          # reconstruct the scope now that we know the owner's id
+          association.reset_scope
 
+          if records = associated_records_to_validate_or_save(association, @new_record_before_save, autosave)
             if autosave
               records_to_destroy = records.select(&:marked_for_destruction?)
               records_to_destroy.each { |record| association.destroy(record) }
@@ -354,15 +403,12 @@ module ActiveRecord
                   association.insert_record(record) unless reflection.nested?
                 end
               elsif autosave
-                saved = record.save(:validate => false)
+                saved = record.save(validate: false)
               end
 
               raise ActiveRecord::Rollback unless saved
             end
           end
-
-          # reconstruct the scope now that we know the owner's id
-          association.reset_scope if association.respond_to?(:reset_scope)
         end
       end
 
@@ -370,7 +416,7 @@ module ActiveRecord
       # on the association.
       #
       # In addition, it will destroy the association if it was marked for
-      # destruction with mark_for_destruction.
+      # destruction with #mark_for_destruction.
       #
       # This all happens inside a transaction, _if_ the Transactions module is included into
       # ActiveRecord::Base after the AutosaveAssociation module, which it does by default.
@@ -391,7 +437,7 @@ module ActiveRecord
                 record[reflection.foreign_key] = key
               end
 
-              saved = record.save(:validate => !autosave)
+              saved = record.save(validate: !autosave)
               raise ActiveRecord::Rollback if !saved && autosave
               saved
             end
@@ -401,7 +447,9 @@ module ActiveRecord
 
       # If the record is new or it has changed, returns true.
       def record_changed?(reflection, record, key)
-        record.new_record? || record[reflection.foreign_key] != key || record.attribute_changed?(reflection.foreign_key)
+        record.new_record? ||
+          (record.has_attribute?(reflection.foreign_key) && record[reflection.foreign_key] != key) ||
+          record.will_save_change_to_attribute?(reflection.foreign_key)
       end
 
       # Saves the associated record if it's new or <tt>:autosave</tt> is enabled.
@@ -409,7 +457,9 @@ module ActiveRecord
       # In addition, it will destroy the association if it was marked for destruction.
       def save_belongs_to_association(reflection)
         association = association_instance_get(reflection.name)
-        record      = association && association.load_target
+        return unless association && association.loaded? && !association.stale_target?
+
+        record = association.load_target
         if record && !record.destroyed?
           autosave = reflection.options[:autosave]
 
@@ -417,7 +467,7 @@ module ActiveRecord
             self[reflection.foreign_key] = nil
             record.destroy
           elsif autosave != false
-            saved = record.save(:validate => !autosave) if record.new_record? || (autosave && record.changed_for_autosave?)
+            saved = record.save(validate: !autosave) if record.new_record? || (autosave && record.changed_for_autosave?)
 
             if association.updated?
               association_id = record.send(reflection.options[:primary_key] || :id)
@@ -427,6 +477,12 @@ module ActiveRecord
 
             saved if autosave
           end
+        end
+      end
+
+      def _ensure_no_duplicate_errors
+        errors.messages.each_key do |attribute|
+          errors[attribute].uniq!
         end
       end
   end

@@ -1,4 +1,4 @@
-require 'abstract_unit'
+require "abstract_unit"
 
 module RenderPlain
   class MinimalController < ActionController::Metal
@@ -80,7 +80,7 @@ module RenderPlain
 
     test "rendering text from an action with default options renders the text with the layout" do
       with_routing do |set|
-        set.draw { get ':controller', action: 'index' }
+        set.draw { ActiveSupport::Deprecation.silence { get ":controller", action: "index" } }
 
         get "/render_plain/simple"
         assert_body "hello david"
@@ -90,7 +90,7 @@ module RenderPlain
 
     test "rendering text from an action with default options renders the text without the layout" do
       with_routing do |set|
-        set.draw { get ':controller', action: 'index' }
+        set.draw { ActiveSupport::Deprecation.silence { get ":controller", action: "index" } }
 
         get "/render_plain/with_layout"
 
@@ -106,17 +106,17 @@ module RenderPlain
       assert_status 404
     end
 
-    test "rendering text with nil returns an empty body padded for Safari" do
+    test "rendering text with nil returns an empty body" do
       get "/render_plain/with_layout/with_nil"
 
-      assert_body " "
+      assert_body ""
       assert_status 200
     end
 
-    test "Rendering text with nil and custom status code returns an empty body padded for Safari and the status" do
+    test "Rendering text with nil and custom status code returns an empty body and the status" do
       get "/render_plain/with_layout/with_nil_and_status"
 
-      assert_body " "
+      assert_body ""
       assert_status 403
     end
 
@@ -157,7 +157,7 @@ module RenderPlain
 
     test "rendering from minimal controller returns response with text/plain content type" do
       get "/render_plain/minimal/index"
-      assert_content_type "text/plain"
+      assert_content_type "text/plain; charset=utf-8"
     end
 
     test "rendering from normal controller returns response with text/plain content type" do

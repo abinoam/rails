@@ -1,9 +1,9 @@
 # Implements the logic behind the rake tasks for annotations like
 #
-#   rake notes
-#   rake notes:optimize
+#   rails notes
+#   rails notes:optimize
 #
-# and friends. See <tt>rake -T notes</tt> and <tt>railties/lib/tasks/annotations.rake</tt>.
+# and friends. See <tt>rails -T notes</tt> and <tt>railties/lib/rails/tasks/annotations.rake</tt>.
 #
 # Annotation objects are triplets <tt>:line</tt>, <tt>:tag</tt>, <tt>:text</tt> that
 # represent the line where the annotation lives, its tag, and its text. Note
@@ -13,10 +13,30 @@
 # start with the tag optionally followed by a colon. Everything up to the end
 # of the line (or closing ERB comment tag) is considered to be their text.
 class SourceAnnotationExtractor
-  class Annotation < Struct.new(:line, :tag, :text)
+  Annotation = Struct.new(:line, :tag, :text) do
     def self.directories
-      @@directories ||= %w(app config db lib test) + (ENV['SOURCE_ANNOTATION_DIRECTORIES'] || '').split(',')
+      @@directories ||= %w(app config db lib test) + (ENV["SOURCE_ANNOTATION_DIRECTORIES"] || "").split(",")
     end
+
+    # Registers additional directories to be included
+    #  SourceAnnotationExtractor::Annotation.register_directories("spec","another")
+    def self.register_directories(*dirs)
+      directories.push(*dirs)
+    end
+
+    def self.extensions
+      @@extensions ||= {}
+    end
+
+    # Registers new Annotations File Extensions
+    #   SourceAnnotationExtractor::Annotation.register_extensions("css", "scss", "sass", "less", "js") { |tag| /\/\/\s*(#{tag}):?\s*(.*)$/ }
+    def self.register_extensions(*exts, &block)
+      extensions[/\.(#{exts.join("|")})$/] = block
+    end
+
+    register_extensions("builder", "rb", "rake", "yml", "yaml", "ruby") { |tag| /#\s*(#{tag}):?\s*(.*)$/ }
+    register_extensions("css", "js") { |tag| /\/\/\s*(#{tag}):?\s*(.*)$/ }
+    register_extensions("erb") { |tag| /<%\s*#\s*(#{tag}):?\s*(.*?)\s*%>/ }
 
     # Returns a representation of the annotation that looks like this:
     #
@@ -24,7 +44,7 @@ class SourceAnnotationExtractor
     #
     # If +options+ has a flag <tt>:tag</tt> the tag is shown as in the example above.
     # Otherwise the string contains just line and text.
-    def to_s(options={})
+    def to_s(options = {})
       s = "[#{line.to_s.rjust(options[:indent])}] "
       s << "[#{tag}] " if options[:tag]
       s << text
@@ -46,7 +66,7 @@ class SourceAnnotationExtractor
   # See <tt>#find_in</tt> for a list of file extensions that will be taken into account.
   #
   # This class method is the single entry point for the rake tasks.
-  def self.enumerate(tag, options={})
+  def self.enumerate(tag, options = {})
     extractor = new(tag)
     dirs = options.delete(:dirs) || Annotation.directories
     extractor.display(extractor.find(dirs), options)
@@ -66,9 +86,8 @@ class SourceAnnotationExtractor
 
   # Returns a hash that maps filenames under +dir+ (recursively) to arrays
   # with their annotations. Only files with annotations are included. Files
-  # with extension +.builder+, +.rb+, +.erb+, +.haml+, +.slim+, +.css+,
-  # +.scss+, +.js+, +.coffee+, +.rake+, +.sass+ and +.less+
-  # are taken into account.
+  # with extension +.builder+, +.rb+, +.rake+, +.yml+, +.yaml+, +.ruby+,
+  # +.css+, +.js+ and +.erb+ are taken into account.
   def find_in(dir)
     results = {}
 
@@ -78,21 +97,14 @@ class SourceAnnotationExtractor
       if File.directory?(item)
         results.update(find_in(item))
       else
-        pattern =
-            case item
-            when /\.(builder|rb|coffee|rake)$/
-              /#\s*(#{tag}):?\s*(.*)$/
-            when /\.(css|scss|sass|less|js)$/
-              /\/\/\s*(#{tag}):?\s*(.*)$/
-            when /\.erb$/
-              /<%\s*#\s*(#{tag}):?\s*(.*?)\s*%>/
-            when /\.haml$/
-              /-\s*#\s*(#{tag}):?\s*(.*)$/
-            when /\.slim$/
-              /\/\s*\s*(#{tag}):?\s*(.*)$/
-            else nil
-            end
-        results.update(extract_annotations_from(item, pattern)) if pattern
+        extension = Annotation.extensions.detect do |regexp, _block|
+          regexp.match(item)
+        end
+
+        if extension
+          pattern = extension.last.call(tag)
+          results.update(extract_annotations_from(item, pattern)) if pattern
+        end
       end
     end
 
@@ -104,7 +116,7 @@ class SourceAnnotationExtractor
   # Otherwise it returns an empty hash.
   def extract_annotations_from(file, pattern)
     lineno = 0
-    result = File.readlines(file).inject([]) do |list, line|
+    result = File.readlines(file, encoding: Encoding::BINARY).inject([]) do |list, line|
       lineno += 1
       next list unless line =~ pattern
       list << Annotation.new(lineno, $1, $2)
@@ -114,7 +126,7 @@ class SourceAnnotationExtractor
 
   # Prints the mapping from filenames to annotations in +results+ ordered by filename.
   # The +options+ hash is passed to each annotation's +to_s+.
-  def display(results, options={})
+  def display(results, options = {})
     options[:indent] = results.flat_map { |f, a| a.map(&:line) }.max.to_s.size
     results.keys.sort.each do |file|
       puts "#{file}:"

@@ -1,9 +1,9 @@
 class String
-  # If you pass a single Fixnum, returns a substring of one character at that
+  # If you pass a single integer, returns a substring of one character at that
   # position. The first character of the string is at position 0, the next at
   # position 1, and so on. If a range is supplied, a substring containing
   # characters at offsets given by the range is returned. In both cases, if an
-  # offset is negative, it is counted from the end of the string. Returns nil
+  # offset is negative, it is counted from the end of the string. Returns +nil+
   # if the initial offset falls outside the string. Returns an empty string if
   # the beginning of the range is greater than the end of the string.
   #
@@ -17,7 +17,7 @@ class String
   #
   # If a Regexp is given, the matching portion of the string is returned.
   # If a String is given, that given string is returned if it occurs in
-  # the string. In both cases, nil is returned if there is no match.
+  # the string. In both cases, +nil+ is returned if there is no match.
   #
   #   str = "hello"
   #   str.at(/lo/) # => "lo"
@@ -64,7 +64,7 @@ class String
 
   # Returns the first character. If a limit is supplied, returns a substring
   # from the beginning of the string until it reaches the limit value. If the
-  # given limit is greater than or equal to the string length, returns self.
+  # given limit is greater than or equal to the string length, returns a copy of self.
   #
   #   str = "hello"
   #   str.first    # => "h"
@@ -74,9 +74,9 @@ class String
   #   str.first(6) # => "hello"
   def first(limit = 1)
     if limit == 0
-      ''
+      ""
     elsif limit >= size
-      self
+      dup
     else
       to(limit - 1)
     end
@@ -84,7 +84,7 @@ class String
 
   # Returns the last character of the string. If a limit is supplied, returns a substring
   # from the end of the string until it reaches the limit value (counting backwards). If
-  # the given limit is greater than or equal to the string length, returns self.
+  # the given limit is greater than or equal to the string length, returns a copy of self.
   #
   #   str = "hello"
   #   str.last    # => "o"
@@ -94,9 +94,9 @@ class String
   #   str.last(6) # => "hello"
   def last(limit = 1)
     if limit == 0
-      ''
+      ""
     elsif limit >= size
-      self
+      dup
     else
       from(-limit)
     end

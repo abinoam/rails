@@ -1,3 +1,5 @@
+**DO NOT READ THIS FILE ON GITHUB, GUIDES ARE PUBLISHED ON http://guides.rubyonrails.org.**
+
 API Documentation Guidelines
 ============================
 
@@ -13,7 +15,20 @@ After reading this guide, you will know:
 RDoc
 ----
 
-The Rails API documentation is generated with RDoc. Please consult the documentation for help with the [markup](http://rdoc.rubyforge.org/RDoc/Markup.html), and also take into account these [additional directives](http://rdoc.rubyforge.org/RDoc/Parser/Ruby.html).
+The [Rails API documentation](http://api.rubyonrails.org) is generated with
+[RDoc](http://docs.seattlerb.org/rdoc/). To generate it, make sure you are
+in the rails root directory, run `bundle install` and execute:
+
+```bash
+  bundle exec rake rdoc
+```
+
+Resulting HTML files can be found in the ./doc/rdoc directory.
+
+Please consult the RDoc documentation for help with the
+[markup](http://docs.seattlerb.org/rdoc/RDoc/Markup.html),
+and also take into account these [additional
+directives](http://docs.seattlerb.org/rdoc/RDoc/Parser/Ruby.html).
 
 Wording
 -------
@@ -67,7 +82,13 @@ used. Instead of:
 English
 -------
 
-Please use American English (<em>color</em>, <em>center</em>, <em>modularize</em>, etc). See [a list of American and British English spelling differences here](http://en.wikipedia.org/wiki/American_and_British_English_spelling_differences).
+Please use American English (*color*, *center*, *modularize*, etc). See [a list of American and British English spelling differences here](http://en.wikipedia.org/wiki/American_and_British_English_spelling_differences).
+
+Oxford Comma
+------------
+
+Please use the [Oxford comma](http://en.wikipedia.org/wiki/Serial_comma)
+("red, white, and blue", instead of "red, white and blue").
 
 Example Code
 ------------
@@ -99,7 +120,7 @@ On the other hand, big chunks of structured documentation may have a separate "E
 The results of expressions follow them and are introduced by "# => ", vertically aligned:
 
 ```ruby
-# For checking if a fixnum is even or odd.
+# For checking if an integer is even or odd.
 #
 #   1.even? # => false
 #   1.odd?  # => true
@@ -110,14 +131,14 @@ The results of expressions follow them and are introduced by "# => ", vertically
 If a line is too long, the comment may be placed on the next line:
 
 ```ruby
-#   label(:post, :title)
-#   # => <label for="post_title">Title</label>
+#   label(:article, :title)
+#   # => <label for="article_title">Title</label>
 #
-#   label(:post, :title, "A short title")
-#   # => <label for="post_title">A short title</label>
+#   label(:article, :title, "A short title")
+#   # => <label for="article_title">A short title</label>
 #
-#   label(:post, :title, "A short title", class: "title_label")
-#   # => <label for="post_title" class="title_label">A short title</label>
+#   label(:article, :title, "A short title", class: "title_label")
+#   # => <label for="article_title" class="title_label">A short title</label>
 ```
 
 Avoid using any printing methods like `puts` or `p` for that purpose.
@@ -175,8 +196,8 @@ end
 The API is careful not to commit to any particular value, the method has
 predicate semantics, that's enough.
 
-Filenames
----------
+File Names
+----------
 
 As a rule of thumb, use filenames relative to the application root:
 
@@ -219,7 +240,7 @@ You can quickly test the RDoc output with the following command:
 
 ```
 $ echo "+:to_param+" | rdoc --pipe
-#=> <p><code>:to_param</code></p>
+# => <p><code>:to_param</code></p>
 ```
 
 ### Regular Font
@@ -260,7 +281,7 @@ Methods created with `(module|class)_eval(STRING)` have a comment by their side 
 
 ```ruby
 for severity in Severity.constants
-  class_eval <<-EOT, __FILE__, __LINE__
+  class_eval <<-EOT, __FILE__, __LINE__ + 1
     def #{severity.downcase}(message = nil, progname = nil, &block)  # def debug(message = nil, progname = nil, &block)
       add(#{severity}, message, progname, &block)                    #   add(DEBUG, message, progname, &block)
     end                                                              # end
@@ -286,3 +307,60 @@ self.class_eval %{
   end
 }
 ```
+
+Method Visibility
+-----------------
+
+When writing documentation for Rails, it's important to understand the difference between public user-facing API vs internal API.
+
+Rails, like most libraries, uses the private keyword from Ruby for defining internal API. However, public API follows a slightly different convention. Instead of assuming all public methods are designed for user consumption, Rails uses the `:nodoc:` directive to annotate these kinds of methods as internal API.
+
+This means that there are methods in Rails with `public` visibility that aren't meant for user consumption.
+
+An example of this is `ActiveRecord::Core::ClassMethods#arel_table`:
+
+```ruby
+module ActiveRecord::Core::ClassMethods
+  def arel_table #:nodoc:
+    # do some magic..
+  end
+end
+```
+
+If you thought, "this method looks like a public class method for `ActiveRecord::Core`", you were right. But actually the Rails team doesn't want users to rely on this method. So they mark it as `:nodoc:` and it's removed from public documentation. The reasoning behind this is to allow the team to change these methods according to their internal needs across releases as they see fit. The name of this method could change, or the return value, or this entire class may disappear; there's no guarantee and so you shouldn't depend on this API in your plugins or applications. Otherwise, you risk your app or gem breaking when you upgrade to a newer release of Rails.
+
+As a contributor, it's important to think about whether this API is meant for end-user consumption. The Rails team is committed to not making any breaking changes to public API across releases without going through a full deprecation cycle. It's recommended that you `:nodoc:` any of your internal methods/classes unless they're already private (meaning visibility), in which case it's internal by default. Once the API stabilizes the visibility can change, but changing public API is much harder due to backwards compatibility.
+
+A class or module is marked with `:nodoc:` to indicate that all methods are internal API and should never be used directly.
+
+To summarize, the Rails team uses `:nodoc:` to mark publicly visible methods and classes for internal use; changes to the visibility of API should be considered carefully and discussed over a pull request first.
+
+Regarding the Rails Stack
+-------------------------
+
+When documenting parts of Rails API, it's important to remember all of the
+pieces that go into the Rails stack.
+
+This means that behavior may change depending on the scope or context of the
+method or class you're trying to document.
+
+In various places there is different behavior when you take the entire stack
+into account, one such example is
+`ActionView::Helpers::AssetTagHelper#image_tag`:
+
+```ruby
+# image_tag("icon.png")
+#   # => <img alt="Icon" src="/assets/icon.png" />
+```
+
+Although the default behavior for `#image_tag` is to always return
+`/images/icon.png`, we take into account the full Rails stack (including the
+Asset Pipeline) we may see the result seen above.
+
+We're only concerned with the behavior experienced when using the full default
+Rails stack.
+
+In this case, we want to document the behavior of the _framework_, and not just
+this specific method.
+
+If you have a question on how the Rails team handles certain API, don't hesitate to open a ticket or send a patch to the [issue tracker](https://github.com/rails/rails/issues).

@@ -1,3 +1,5 @@
+**DO NOT READ THIS FILE ON GITHUB, GUIDES ARE PUBLISHED ON http://guides.rubyonrails.org.**
+
 Development Dependencies Install
 ================================
 
@@ -7,7 +9,7 @@ After reading this guide, you will know:
 
 * How to set up your machine for Rails development
 * How to run specific groups of unit tests from the Rails test suite
-* How the ActiveRecord portion of the Rails test suite operates
+* How the Active Record portion of the Rails test suite operates
 
 --------------------------------------------------------------------------------
 
@@ -19,16 +21,15 @@ The easiest and recommended way to get a development environment ready to hack i
 The Hard Way
 ------------
 
-In case you can't use the Rails development box, see section above, these are the steps to manually build a development box for Ruby on Rails core development.
+In case you can't use the Rails development box, see section below, these are the steps to manually build a development box for Ruby on Rails core development.
 
 ### Install Git
 
 Ruby on Rails uses Git for source code control. The [Git homepage](http://git-scm.com/) has installation instructions. There are a variety of resources on the net that will help you get familiar with Git:
 
 * [Try Git course](http://try.github.io/) is an interactive course that will teach you the basics.
-* The [official Documentation](http://git-scm.com/documentation) is pretty comprehensive and also contains some videos with the basics of Git
+* The [official Documentation](http://git-scm.com/documentation) is pretty comprehensive and also contains some videos with the basics of Git.
 * [Everyday Git](http://schacon.github.io/git/everyday.html) will teach you just enough about Git to get by.
-* The [PeepCode screencast](https://peepcode.com/products/git) on Git is easier to follow.
 * [GitHub](http://help.github.com) offers links to a variety of Git resources.
 * [Pro Git](http://git-scm.com/book) is an entire book about Git with a Creative Commons license.
 
@@ -45,42 +46,20 @@ $ cd rails
 
 The test suite must pass with any submitted code. No matter whether you are writing a new patch, or evaluating someone else's, you need to be able to run the tests.
 
-Install first libxml2 and libxslt together with their development files for Nokogiri. In Ubuntu that's
+Install first SQLite3 and its development files for the `sqlite3` gem. On macOS
+users are done with:
 
 ```bash
-$ sudo apt-get install libxml2 libxml2-dev libxslt1-dev
+$ brew install sqlite3
 ```
 
-If you are on Fedora or CentOS, you can run
-
-```bash
-$ sudo yum install libxml2 libxml2-devel libxslt libxslt-devel
-```
-
-If you are running Arch Linux, you're done with:
-
-```bash
-$ sudo pacman -S libxml2 libxslt
-```
-
-On FreeBSD, you just have to run:
-
-```bash
-# pkg_add -r libxml2 libxslt
-```
-
-Alternatively, you can install the `textproc/libxml2` and `textproc/libxslt`
-ports.
-
-If you have any problems with these libraries, you can install them manually by compiling the source code. Just follow the instructions at the [Red Hat/CentOS section of the Nokogiri tutorials](http://nokogiri.org/tutorials/installing_nokogiri.html#red_hat__centos) .
-
-Also, SQLite3 and its development files for the `sqlite3-ruby` gem - in Ubuntu you're done with just
+In Ubuntu you're done with just:
 
 ```bash
 $ sudo apt-get install sqlite3 libsqlite3-dev
 ```
 
-And if you are on Fedora or CentOS, you're done with
+If you are on Fedora or CentOS, you're done with
 
 ```bash
 $ sudo yum install sqlite3 sqlite3-devel
@@ -95,12 +74,12 @@ $ sudo pacman -S sqlite
 For FreeBSD users, you're done with:
 
 ```bash
-# pkg_add -r sqlite3
+# pkg install sqlite3
 ```
 
 Or compile the `databases/sqlite3` port.
 
-Get a recent version of [Bundler](http://gembundler.com/)
+Get a recent version of [Bundler](http://bundler.io/)
 
 ```bash
 $ gem install bundler
@@ -117,7 +96,7 @@ This command will install all dependencies except the MySQL and PostgreSQL Ruby 
 
 NOTE: If you would like to run the tests that use memcached, you need to ensure that you have it installed and running.
 
-You can use homebrew to install memcached on OSX:
+You can use [Homebrew](http://brew.sh/) to install memcached on OS X:
 
 ```bash
 $ brew install memcached
@@ -134,6 +113,20 @@ Or use yum on Fedora or CentOS:
 ```bash
 $ sudo yum install memcached
 ```
+
+If you are running on Arch Linux:
+
+```bash
+$ sudo pacman -S memcached
+```
+
+For FreeBSD users, you're done with:
+
+```bash
+# pkg install memcached
+```
+
+Alternatively, you can compile the `databases/memcached` port.
 
 With the dependencies now installed, you can run the test suite with:
 
@@ -169,9 +162,13 @@ $ cd actionpack
 $ bundle exec ruby -Itest path/to/test.rb -n test_name
 ```
 
+### Railties Setup
+
+Some Railties tests depend on a JavaScript runtime environment, such as having [Node.js](https://nodejs.org/) installed.
+
 ### Active Record Setup
 
-The test suite of Active Record attempts to run four times: once for SQLite3, once for each of the two MySQL gems (`mysql` and `mysql2`), and once for PostgreSQL. We are going to see now how to set up the environment for them.
+Active Record's test suite runs three times: once for SQLite3, once for MySQL, and once for PostgreSQL. We are going to see now how to set up the environment for them.
 
 WARNING: If you're working with Active Record code, you _must_ ensure that the tests pass for at least MySQL, PostgreSQL, and SQLite3. Subtle differences between the various adapters have been behind the rejection of many patches that looked OK when tested only against MySQL.
 
@@ -181,10 +178,22 @@ The Active Record test suite requires a custom config file: `activerecord/test/c
 
 #### MySQL and PostgreSQL
 
-To be able to run the suite for MySQL and PostgreSQL we need their gems. Install first the servers, their client libraries, and their development files. In Ubuntu just run
+To be able to run the suite for MySQL and PostgreSQL we need their gems. Install
+first the servers, their client libraries, and their development files.
+
+On OS X, you can run:
 
 ```bash
-$ sudo apt-get install mysql-server libmysqlclient15-dev
+$ brew install mysql
+$ brew install postgresql
+```
+
+Follow the instructions given by Homebrew to start these.
+
+In Ubuntu just run:
+
+```bash
+$ sudo apt-get install mysql-server libmysqlclient-dev
 $ sudo apt-get install postgresql postgresql-client postgresql-contrib libpq-dev
 ```
 
@@ -206,8 +215,8 @@ $ sudo pacman -S postgresql postgresql-libs
 FreeBSD users will have to run the following:
 
 ```bash
-# pkg_add -r mysql56-client mysql56-server
-# pkg_add -r postgresql92-client postgresql92-server
+# pkg install mysql56-client mysql56-server
+# pkg install postgresql94-client postgresql94-server
 ```
 
 Or install them through ports (they are located under the `databases` folder).
@@ -241,20 +250,27 @@ and create the test databases:
 
 ```bash
 $ cd activerecord
-$ bundle exec rake mysql:build_databases
+$ bundle exec rake db:mysql:build
 ```
 
-PostgreSQL's authentication works differently. A simple way to set up the development environment for example is to run with your development account
+PostgreSQL's authentication works differently. To setup the development environment
+with your development account, on Linux or BSD, you just have to run:
 
 ```bash
 $ sudo -u postgres createuser --superuser $USER
 ```
 
-and then create the test databases with
+and for OS X:
+
+```bash
+$ createuser --superuser $USER
+```
+
+Then you need to create the test databases with
 
 ```bash
 $ cd activerecord
-$ bundle exec rake postgresql:build_databases
+$ bundle exec rake db:postgresql:build
 ```
 
 It is possible to build databases for both PostgreSQL and MySQL with
@@ -276,3 +292,46 @@ NOTE: Using the rake task to create the test databases ensures they have the cor
 NOTE: You'll see the following warning (or localized warning) during activating HStore extension in PostgreSQL 9.1.x or earlier: "WARNING: => is deprecated as an operator".
 
 If you're using another database, check the file `activerecord/test/config.yml` or `activerecord/test/config.example.yml` for default connection information. You can edit `activerecord/test/config.yml` to provide different credentials on your machine if you must, but obviously you should not push any such changes back to Rails.
+
+### Action Cable Setup
+
+Action Cable uses Redis as its default subscriptions adapter ([read more](action_cable_overview.html#broadcasting)). Thus, in order to have Action Cable's tests passing you need to install and have Redis running.
+
+#### Install Redis From Source
+
+Redis' documentation discourage installations with package managers as those are usually outdated. Installing from source and bringing the server up is straight forward and well documented on [Redis' documentation](http://redis.io/download#installation).
+
+#### Install Redis From Package Manager
+
+On OS X, you can run:
+
+```bash
+$ brew install redis
+```
+
+Follow the instructions given by Homebrew to start these.
+
+In Ubuntu just run:
+
+```bash
+$ sudo apt-get install redis-server
+```
+
+On Fedora or CentOS (requires EPEL enabled), just run:
+
+```bash
+$ sudo yum install redis
+```
+
+If you are running Arch Linux just run:
+
+```bash
+$ sudo pacman -S redis
+$ sudo systemctl start redis
+```
+
+FreeBSD users will have to run the following:
+
+```bash
+# portmaster databases/redis
+```

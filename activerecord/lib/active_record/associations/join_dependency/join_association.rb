@@ -1,4 +1,4 @@
-require 'active_record/associations/join_dependency/join_part'
+require "active_record/associations/join_dependency/join_part"
 
 module ActiveRecord
   module Associations
@@ -21,12 +21,12 @@ module ActiveRecord
           super && reflection == other.reflection
         end
 
-        def join_constraints(foreign_table, foreign_klass, node, join_type, tables, scope_chain, chain)
-          joins         = []
-          tables        = tables.reverse
+        JoinInformation = Struct.new :joins, :binds
 
-          scope_chain_index = 0
-          scope_chain = scope_chain.reverse
+        def join_constraints(foreign_table, foreign_klass, join_type, tables, chain)
+          joins         = []
+          binds         = []
+          tables        = tables.reverse
 
           # The chain starts with the target table, but we want to end with it here (makes
           # more sense in this context), so we reverse
@@ -34,38 +34,33 @@ module ActiveRecord
             table = tables.shift
             klass = reflection.klass
 
-            case reflection.source_macro
-            when :belongs_to
-              key         = reflection.association_primary_key
-              foreign_key = reflection.foreign_key
-            else
-              key         = reflection.foreign_key
-              foreign_key = reflection.active_record_primary_key
-            end
+            join_keys   = reflection.join_keys
+            key         = join_keys.key
+            foreign_key = join_keys.foreign_key
 
             constraint = build_constraint(klass, table, key, foreign_table, foreign_key)
 
-            scope_chain_items = scope_chain[scope_chain_index].map do |item|
-              if item.is_a?(Relation)
-                item
-              else
-                ActiveRecord::Relation.create(klass, table).instance_exec(node, &item)
-              end
-            end
-            scope_chain_index += 1
+            predicate_builder = PredicateBuilder.new(TableMetadata.new(klass, table))
+            scope_chain_items = reflection.join_scopes(table, predicate_builder)
+            klass_scope       = reflection.klass_join_scope(table, predicate_builder)
 
-            scope_chain_items.concat [klass.send(:build_default_scope)].compact
+            scope_chain_items.concat [klass_scope].compact
 
             rel = scope_chain_items.inject(scope_chain_items.shift) do |left, right|
               left.merge right
             end
 
-            if reflection.type
-              constraint = constraint.and table[reflection.type].eq foreign_klass.base_class.name
+            if rel && !rel.arel.constraints.empty?
+              binds += rel.bound_attributes
+              constraint = constraint.and rel.arel.constraints
             end
 
-            if rel && !rel.arel.constraints.empty?
-              constraint = constraint.and rel.arel.constraints
+            if reflection.type
+              value = foreign_klass.base_class.name
+              column = klass.columns_hash[reflection.type.to_s]
+
+              binds << Relation::QueryAttribute.new(column.name, value, klass.type_for_attribute(column.name))
+              constraint = constraint.and klass.arel_attribute(reflection.type, table).eq(Arel::Nodes::BindParam.new)
             end
 
             joins << table.create_join(table, table.create_on(constraint), join_type)
@@ -74,7 +69,7 @@ module ActiveRecord
             foreign_table, foreign_klass = table, klass
           end
 
-          joins
+          JoinInformation.new joins, binds
         end
 
         #  Builds equality condition.
@@ -86,7 +81,7 @@ module ActiveRecord
         #  end
         #
         #  If I execute `Physician.joins(:appointments).to_a` then
-        #    reflection    # => #<ActiveRecord::Reflection::AssociationReflection @macro=:has_many ...>
+        #    klass         # => Physician
         #    table         # => #<Arel::Table @name="appointments" ...>
         #    key           # =>  physician_id
         #    foreign_table # => #<Arel::Table @name="physicians" ...>

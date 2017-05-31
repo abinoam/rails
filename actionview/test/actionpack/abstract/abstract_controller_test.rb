@@ -1,9 +1,8 @@
-require 'abstract_unit'
-require 'set'
+require "abstract_unit"
+require "set"
 
 module AbstractController
   module Testing
-
     # Test basic dispatching.
     # ====
     # * Call process
@@ -38,12 +37,12 @@ module AbstractController
 
       def render(options = {})
         if options.is_a?(String)
-          options = {:_template_name => options}
+          options = { _template_name: options }
         end
         super
       end
 
-      append_view_path File.expand_path(File.join(File.dirname(__FILE__), "views"))
+      append_view_path File.expand_path("views", __dir__)
     end
 
     class Me2 < RenderingController
@@ -65,11 +64,11 @@ module AbstractController
       end
 
       def rendering_to_body
-        self.response_body = render_to_body :template => "naked_render"
+        self.response_body = render_to_body template: "naked_render"
       end
 
       def rendering_to_string
-        self.response_body = render_to_string :template => "naked_render"
+        self.response_body = render_to_string template: "naked_render"
       end
     end
 
@@ -114,13 +113,13 @@ module AbstractController
     # * self._prefix is used when defined
     class PrefixedViews < RenderingController
       private
-      def self.prefix
-        name.underscore
-      end
+        def self.prefix
+          name.underscore
+        end
 
-      def _prefixes
-        [self.class.prefix]
-      end
+        def _prefixes
+          [self.class.prefix]
+        end
     end
 
     class Me3 < PrefixedViews
@@ -150,6 +149,38 @@ module AbstractController
       end
     end
 
+    class OverridingLocalPrefixes < AbstractController::Base
+      include AbstractController::Rendering
+      include ActionView::Rendering
+      append_view_path File.expand_path("views", __dir__)
+
+      def index
+        render
+      end
+
+      def self.local_prefixes
+        # this would usually return "abstract_controller/testing/overriding_local_prefixes"
+        super + ["abstract_controller/testing/me3"]
+      end
+
+      class Inheriting < self
+      end
+    end
+
+    class OverridingLocalPrefixesTest < ActiveSupport::TestCase
+      test "overriding .local_prefixes adds prefix" do
+        @controller = OverridingLocalPrefixes.new
+        @controller.process(:index)
+        assert_equal "Hello from me3/index.erb", @controller.response_body
+      end
+
+      test ".local_prefixes is inherited" do
+        @controller = OverridingLocalPrefixes::Inheriting.new
+        @controller.process(:index)
+        assert_equal "Hello from me3/index.erb", @controller.response_body
+      end
+    end
+
     # Test rendering with layouts
     # ====
     # self._layout is used when defined
@@ -157,19 +188,19 @@ module AbstractController
       include ActionView::Layouts
 
       private
-      def self.layout(formats)
-        find_template(name.underscore, {:formats => formats}, :_prefixes => ["layouts"])
-      rescue ActionView::MissingTemplate
-        begin
-          find_template("application", {:formats => formats}, :_prefixes => ["layouts"])
+        def self.layout(formats)
+          find_template(name.underscore, { formats: formats }, _prefixes: ["layouts"])
         rescue ActionView::MissingTemplate
+          begin
+            find_template("application", { formats: formats }, _prefixes: ["layouts"])
+          rescue ActionView::MissingTemplate
+          end
         end
-      end
 
-      def render_to_body(options = {})
-        options[:_layout] = options[:layout] || _default_layout({})
-        super
-      end
+        def render_to_body(options = {})
+          options[:_layout] = options[:layout] || _default_layout({})
+          super
+        end
     end
 
     class Me4 < WithLayouts
@@ -196,7 +227,7 @@ module AbstractController
     end
 
     class ActionMissingRespondToActionController < AbstractController::Base
-      # No actions
+    # No actions
     private
       def action_missing(action_name)
         self.response_body = "success"
@@ -216,7 +247,6 @@ module AbstractController
     end
 
     class TestRespondToAction < ActiveSupport::TestCase
-
       def assert_dispatch(klass, body = "success", action = :index)
         controller = klass.new
         controller.process(action)
@@ -245,18 +275,16 @@ module AbstractController
     end
 
     class Me6 < AbstractController::Base
-      self.action_methods
+      action_methods
 
       def index
       end
     end
 
     class TestActionMethodsReloading < ActiveSupport::TestCase
-
       test "action_methods should be reloaded after defining a new method" do
         assert_equal Set.new(["index"]), Me6.action_methods
       end
     end
-
   end
 end

@@ -5,41 +5,29 @@ module ActiveSupport
       self.validate_float = true
 
       def convert
-        precision = options.delete :precision
-        significant = options.delete :significant
+        helper = RoundingHelper.new(options)
+        rounded_number = helper.round(number)
 
-        case number
-        when Float, String
-          @number = BigDecimal(number.to_s)
-        when Rational
-          if significant
-            @number = BigDecimal(number, digit_count(number.to_i) + precision)
-          else
-            @number = BigDecimal(number, precision)
+        if precision = options[:precision]
+          if options[:significant] && precision > 0
+            digits = helper.digit_count(rounded_number)
+            precision -= digits
+            precision = 0 if precision < 0 # don't let it be negative
           end
-        else
-          @number = number.to_d
-        end
 
-        if significant && precision > 0
-          digits, rounded_number = digits_and_rounded_number(precision)
-          precision -= digits
-          precision = 0 if precision < 0 # don't let it be negative
+          formatted_string =
+            if BigDecimal === rounded_number && rounded_number.finite?
+              s = rounded_number.to_s("F")
+              s << "0".freeze * precision
+              a, b = s.split(".".freeze, 2)
+              a << ".".freeze
+              a << b[0, precision]
+            else
+              "%00.#{precision}f" % rounded_number
+            end
         else
-          rounded_number = number.round(precision)
-          rounded_number = rounded_number.to_i if precision == 0
-          rounded_number = rounded_number.abs if rounded_number.zero? # prevent showing negative zeros
+          formatted_string = rounded_number
         end
-
-        formatted_string =
-          case rounded_number
-          when BigDecimal
-            s = rounded_number.to_s('F') + '0'*precision
-            a, b = s.split('.', 2)
-            a + '.' + b[0, precision]
-          else
-            "%01.#{precision}f" % rounded_number
-          end
 
         delimited_number = NumberToDelimitedConverter.convert(formatted_string, options)
         format_number(delimited_number)
@@ -52,7 +40,7 @@ module ActiveSupport
             [1, 0]
           else
             digits = digit_count(number)
-            multiplier = 10 ** (digits - precision)
+            multiplier = 10**(digits - precision)
             rounded_number = calculate_rounded_number(multiplier)
             digits = digit_count(rounded_number) # After rounding, the number of digits may have changed
             [digits, rounded_number]
@@ -64,7 +52,7 @@ module ActiveSupport
         end
 
         def digit_count(number)
-          (Math.log10(absolute_number(number)) + 1).floor
+          number.zero? ? 1 : (Math.log10(absolute_number(number)) + 1).floor
         end
 
         def strip_insignificant_zeros
@@ -74,18 +62,10 @@ module ActiveSupport
         def format_number(number)
           if strip_insignificant_zeros
             escaped_separator = Regexp.escape(options[:separator])
-            number.sub(/(#{escaped_separator})(\d*[1-9])?0+\z/, '\1\2').sub(/#{escaped_separator}\z/, '')
+            number.sub(/(#{escaped_separator})(\d*[1-9])?0+\z/, '\1\2').sub(/#{escaped_separator}\z/, "")
           else
             number
           end
-        end
-
-        def absolute_number(number)
-          number.respond_to?(:abs) ? number.abs : number.to_d.abs
-        end
-
-        def zero?
-          number.respond_to?(:zero?) ? number.zero? : number.to_d.zero?
         end
     end
   end

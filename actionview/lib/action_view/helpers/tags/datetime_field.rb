@@ -5,8 +5,8 @@ module ActionView
         def render
           options = @options.stringify_keys
           options["value"] ||= format_date(value(object))
-          options["min"] = format_date(options["min"])
-          options["max"] = format_date(options["max"])
+          options["min"] = format_date(datetime_value(options["min"]))
+          options["max"] = format_date(datetime_value(options["max"]))
           @options = options
           super
         end
@@ -14,7 +14,15 @@ module ActionView
         private
 
           def format_date(value)
-            value.try(:strftime, "%Y-%m-%dT%T.%L%z")
+            raise NotImplementedError
+          end
+
+          def datetime_value(value)
+            if value.is_a? String
+              DateTime.parse(value) rescue nil
+            else
+              value
+            end
           end
       end
     end
